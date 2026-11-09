@@ -1,10 +1,11 @@
 name: 公交到站推送
+
 on:
   schedule:
-    - cron: '8 8 * * *'
-      timezone: 'Asia/Shanghai'
-    - cron: '18 8 * * *'
-      timezone: 'Asia/Shanghai'
+    # 北京时间 8:08 (UTC 0:08)
+    - cron: '8 0 * * *'
+    # 北京时间 8:18 (UTC 0:18)
+    - cron: '18 0 * * *'
   workflow_dispatch:
     inputs:
       discover:
@@ -17,10 +18,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      
+      - name: 安装 Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
+          
+      - name: 安装 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装 Python 依赖
+        run: pip install -r requirements.txt
+        
       - name: 运行主脚本
         env:
           QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
