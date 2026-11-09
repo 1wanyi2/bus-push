@@ -11,9 +11,10 @@ from zoneinfo import ZoneInfo
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+# 设置时区为北京时间
 TZ = ZoneInfo("Asia/Shanghai")
 
-# ============ 配置区：目前保持默认 ============
+# ============ 配置区：等拿到真实 ID 后再填 ============
 CITY_ID = "45" # 重庆
 MAIN_STATION_NAME = "绿云石都"
 BACKUP_STATION_NAME = "恒胜"
@@ -30,6 +31,7 @@ WINDOW_END = time(8, 28)
 LOOKAHEAD_MIN = 30
 # ================================================================
 
+# 启动车来了的 MCP 服务
 SERVER_PARAMS = StdioServerParameters(
     command="npx",
     args=["-y", "chelaile-mcp"],
@@ -51,6 +53,7 @@ async def call_tool(session, name, args):
         print(f"调用工具 {name} 失败: {e}", file=sys.stderr)
         return None, str(e)
 
+# 侦察模式：专门用来打印各种 ID
 async def discover(session):
     print("=== 成功连接到 MCP 服务 ===", file=sys.stderr)
     
@@ -182,15 +185,17 @@ async def main():
     now = datetime.now(TZ)
     print(f"开始运行，模式: {'DISCOVER' if os.getenv('DISCOVER') == '1' else 'NORMAL'}", file=sys.stderr)
     
-    # 关键修改：加入 errlog=sys.stderr，如果子进程报错，会直接打印在日志里
+    # 将错误日志重定向，如果 npx 启动失败，能看到具体原因
     async with stdio_client(SERVER_PARAMS, errlog=sys.stderr) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
+            # 如果是侦察模式，打印完信息就结束
             if os.getenv("DISCOVER") == "1":
                 await discover(session)
                 return
 
+            # 正常查询模式
             main_results = []
             for cfg in MAIN_LINES:
                 etas = await query_line_etas(session, cfg)
