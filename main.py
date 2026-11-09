@@ -13,13 +13,11 @@ from mcp.client.stdio import stdio_client
 
 TZ = ZoneInfo("Asia/Shanghai")
 
-# ============ 配置区：首次 DISCOVER 运行后填入真实 ID ============
-CITY_ID = "45"  # 重庆，待 DISCOVER 校准
-
+# ============ 配置区：目前保持默认，等拿到日志后再填 ============
+CITY_ID = "" # 待校准
 MAIN_STATION_NAME = "绿云石都"
 BACKUP_STATION_NAME = "恒胜"
 
-# 每条主线：line_id、station_id、target_order 需 DISCOVER 后填入
 MAIN_LINES = [
     {"name": "891", "direction": "外河坪枢纽站", "line_id": "", "station_id": "", "target_order": 0},
     {"name": "204", "direction": "重庆育才实验学校", "line_id": "", "station_id": "", "target_order": 0},
@@ -37,48 +35,48 @@ SERVER_PARAMS = StdioServerParameters(
     args=["-y", "chelaile-mcp"],
 )
 
-
 async def call_tool(session, name, args):
-    result = await session.call_tool(name, args)
-    # MCP 返回 content 列表，取文本拼接
-    texts = []
-    for c in result.content:
-        if hasattr(c, "text"):
-            texts.append(c.text)
-    raw = "\n".join(texts)
     try:
-        return json.loads(raw), raw
-    except json.JSONDecodeError:
-        return None, raw
-
+        result = await session.call_tool(name, args)
+        texts = []
+        for c in result.content:
+            if hasattr(c, "text"):
+                texts.append(c.text)
+        raw = "\n".join(texts)
+        try:
+            return json.loads(raw), raw
+        except json.JSONDecodeError:
+            return None, raw
+    except Exception as e:
+        print(f"调用工具 {name} 失败: {e}", file=sys.stderr)
+        return None, str(e)
 
 async def discover(session):
     print("=== 可用工具列表 ===", file=sys.stderr)
-    tools = await session.list_tools()
-    for t in tools.tools:
-        print(f"- {t.name}: {t.description}", file=sys.stderr)
-        print(f"  schema: {json.dumps(t.inputSchema, ensure_ascii=False)}", file=sys.stderr)
+    try:
+        tools = await session.list_tools()
+        for t in tools.tools:
+            print(f"- {t.name}: {t.description}", file=sys.stderr)
+    except Exception as e:
+        print(f"获取工具列表失败: {e}", file=sys.stderr)
 
-    print("\n=== 搜索主站 ===", file=sys.stderr)
-    data, raw = await call_tool(session, "bus_search", {"keyword": MAIN_STATION_NAME, "cityId": CITY_ID})
+    print("\n=== 搜索主站：绿云石都 ===", file=sys.stderr)
+    _, raw = await call_tool(session, "bus_search", {"keyword": MAIN_STATION_NAME})
     print(raw, file=sys.stderr)
 
-    print("\n=== 搜索备用站 ===", file=sys.stderr)
-    data, raw = await call_tool(session, "bus_search", {"keyword": BACKUP_STATION_NAME, "cityId": CITY_ID})
+    print("\n=== 搜索备用站：恒胜 ===", file=sys.stderr)
+    _, raw = await call_tool(session, "bus_search", {"keyword": BACKUP_STATION_NAME})
     print(raw, file=sys.stderr)
 
     for line in MAIN_LINES + [BACKUP_LINE]:
         print(f"\n=== 搜索线路 {line['name']} ===", file=sys.stderr)
-        data, raw = await call_tool(session, "bus_search", {"keyword": line["name"], "cityId": CITY_ID})
+        _, raw = await call_tool(session, "bus_search", {"keyword": line["name"]})
         print(raw, file=sys.stderr)
 
-
 def parse_etas(payload):
-    """从 bus_refresh_lines 返回中提取 [(arrival_dt, remain_sec)]，按时间排序。"""
     out = []
     if not payload:
         return out
-    # 兼容常见结构：{"lines": [{"buses": [{"eta": {"travelTime":..., "displayTime":...}}]}]}
     lines = payload.get("lines") or payload.get("data", {}).get("lines") or []
     if isinstance(payload, list):
         lines = payload
@@ -92,19 +90,14 @@ def parse_etas(payload):
             out.append(arrival)
     return sorted(out)
 
-
 async def query_line_etas(session, cfg):
     args = {
         "lineId": cfg["line_id"],
         "stationId": cfg["station_id"],
         "targetOrder": cfg["target_order"],
-        "cityId": CITY_ID,
     }
     payload, raw = await call_tool(session, "bus_refresh_lines", args)
-    if payload is None and os.getenv("DEBUG") == "1":
-        print(f"[DEBUG] {cfg['name']} 原始返回: {raw}", file=sys.stderr)
     return parse_etas(payload)
-
 
 def build_html(main_results, backup_results, now):
     def fmt(dt):
@@ -113,7 +106,6 @@ def build_html(main_results, backup_results, now):
     rows = []
     hit_window = False
     for name, direction, etas in main_results:
-        # 取未来 30 分钟内的最早一班
         limited = [e for e in etas if e <= now + timedelta(minutes=LOOKAHEAD_MIN)]
         if limited:
             first = limited[0]
@@ -176,10 +168,8 @@ def build_html(main_results, backup_results, now):
       <p>查询时间：{now.strftime('%Y-%m-%d %H:%M:%S')}（北京时间）</p>
       {main_table}
       {backup_block}
-      <p class="note">窗口判断：8:20–8:28 内是否有主线车到站。绿色表示在窗口内。</p>
     </body></html>
     """
-
 
 def send_mail(html):
     sender = os.environ["QQ_EMAIL"]
@@ -194,9 +184,10 @@ def send_mail(html):
         s.login(sender, auth)
         s.sendmail(sender, [to], msg.as_string())
 
-
 async def main():
     now = datetime.now(TZ)
+    print(f"开始运行，模式: {'DISCOVER' if os.getenv('DISCOVER') == '1' else 'NORMAL'}", file=sys.stderr)
+    
     async with stdio_client(SERVER_PARAMS) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -205,6 +196,7 @@ async def main():
                 await discover(session)
                 return
 
+            # 正常模式，如果没填 ID 会报错，等后面拿到 ID 再运行
             main_results = []
             for cfg in MAIN_LINES:
                 etas = await query_line_etas(session, cfg)
@@ -225,7 +217,6 @@ async def main():
             html = build_html(main_results, backup_results, now)
             send_mail(html)
             print(f"[OK] {now.strftime('%H:%M')} 推送完成，窗口命中={hit_window}", file=sys.stderr)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
