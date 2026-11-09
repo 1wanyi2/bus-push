@@ -2,9 +2,7 @@ name: 公交到站推送
 
 on:
   schedule:
-    # 北京时间 8:08 (UTC 0:08)
     - cron: '8 0 * * *'
-    # 北京时间 8:18 (UTC 0:18)
     - cron: '18 0 * * *'
   workflow_dispatch:
     inputs:
@@ -29,6 +27,10 @@ jobs:
         with:
           node-version: '20'
 
+      # 关键新增：配置国内 npm 镜像，解决网络不通的问题
+      - name: 配置 npm 镜像源
+        run: npm config set registry https://registry.npmmirror.com
+
       - name: 安装 Python 依赖
         run: pip install -r requirements.txt
         
@@ -38,5 +40,4 @@ jobs:
           QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
           TO_EMAIL: ${{ secrets.TO_EMAIL }}
           DISCOVER: ${{ github.event.inputs.discover }}
-          DEBUG: '1'
         run: python main.py
