@@ -1,0 +1,31 @@
+name: 公交到站推送
+on:
+  schedule:
+    - cron: '8 8 * * *'
+      timezone: 'Asia/Shanghai'
+    - cron: '18 8 * * *'
+      timezone: 'Asia/Shanghai'
+  workflow_dispatch:
+    inputs:
+      discover:
+        description: '设为 1 进入 ID 发现模式'
+        required: false
+        default: ''
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: 运行主脚本
+        env:
+          QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
+          QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+          DISCOVER: ${{ github.event.inputs.discover }}
+          DEBUG: '1'
+        run: python main.py
