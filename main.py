@@ -13,8 +13,8 @@ from mcp.client.stdio import stdio_client
 
 TZ = ZoneInfo("Asia/Shanghai")
 
-# ============ 配置区：目前保持默认，等拿到日志后再填 ============
-CITY_ID = "" # 待校准
+# ============ 配置区：目前保持默认 ============
+CITY_ID = "45" # 重庆
 MAIN_STATION_NAME = "绿云石都"
 BACKUP_STATION_NAME = "恒胜"
 
@@ -52,14 +52,8 @@ async def call_tool(session, name, args):
         return None, str(e)
 
 async def discover(session):
-    print("=== 可用工具列表 ===", file=sys.stderr)
-    try:
-        tools = await session.list_tools()
-        for t in tools.tools:
-            print(f"- {t.name}: {t.description}", file=sys.stderr)
-    except Exception as e:
-        print(f"获取工具列表失败: {e}", file=sys.stderr)
-
+    print("=== 成功连接到 MCP 服务 ===", file=sys.stderr)
+    
     print("\n=== 搜索主站：绿云石都 ===", file=sys.stderr)
     _, raw = await call_tool(session, "bus_search", {"keyword": MAIN_STATION_NAME})
     print(raw, file=sys.stderr)
@@ -188,7 +182,8 @@ async def main():
     now = datetime.now(TZ)
     print(f"开始运行，模式: {'DISCOVER' if os.getenv('DISCOVER') == '1' else 'NORMAL'}", file=sys.stderr)
     
-    async with stdio_client(SERVER_PARAMS) as (read, write):
+    # 关键修改：加入 errlog=sys.stderr，如果子进程报错，会直接打印在日志里
+    async with stdio_client(SERVER_PARAMS, errlog=sys.stderr) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -196,7 +191,6 @@ async def main():
                 await discover(session)
                 return
 
-            # 正常模式，如果没填 ID 会报错，等后面拿到 ID 再运行
             main_results = []
             for cfg in MAIN_LINES:
                 etas = await query_line_etas(session, cfg)
